@@ -19,7 +19,11 @@ import {
   UserCog,
   TrendingUp,
   History,
-  LogOut
+  LogOut,
+  Box,
+  UserPlus,
+  FileText,
+  Package
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useAuth } from '../context/AuthContext';
@@ -32,7 +36,7 @@ interface SidebarItemProps {
   onClick?: () => void;
 }
 
-const SidebarItem = ({ to, icon: Icon, label, active, onClick }: SidebarItemProps) => (
+const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label, active, onClick }) => (
   <Link
     to={to}
     onClick={onClick}
@@ -101,6 +105,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { to: '/finance/profit-report', icon: TrendingUp, label: 'Profit Report' },
   ];
 
+  const inventoryItems = [
+    { to: '/inventory/cable-stock', icon: Box, label: 'Cable Stock' },
+    { to: '/inventory/cable-allocation', icon: UserPlus, label: 'Engineer Allocation' },
+    { to: '/inventory/usage-report', icon: FileText, label: 'Usage Report' },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 flex overflow-hidden">
       {/* Sidebar */}
@@ -153,6 +163,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             <div className="space-y-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-4">Finance</span>
               {financeItems.map((item) => (
+                <SidebarItem
+                  key={item.to}
+                  to={item.to}
+                  icon={item.icon}
+                  label={item.label}
+                  active={location.pathname === item.to}
+                  onClick={handleNavClick}
+                />
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-4">Inventory</span>
+              {inventoryItems.map((item) => (
                 <SidebarItem
                   key={item.to}
                   to={item.to}

@@ -1,4 +1,4 @@
-import { Connection, Retailer, PackageType, Engineer, CommissionSettings } from '../types';
+import { Connection, Retailer, PackageType, Engineer, CommissionSettings, CableStock, EngineerAllocation, CableUsage } from '../types';
 import { subDays, format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
 
 export const DEFAULT_COMMISSION_SETTINGS: CommissionSettings = {
@@ -48,6 +48,7 @@ export const DUMMY_CONNECTIONS: Connection[] = Array.from({ length: 50 }).map((_
   const profit = DEFAULT_COMMISSION_SETTINGS.companyCost - engComm - retComm;
 
   const retailer = isRetailer ? DUMMY_RETAILERS[Math.floor(Math.random() * DUMMY_RETAILERS.length)] : null;
+  const engineer = DUMMY_ENGINEERS[Math.floor(Math.random() * DUMMY_ENGINEERS.length)];
 
   return {
     id: `conn-${i}`,
@@ -55,7 +56,8 @@ export const DUMMY_CONNECTIONS: Connection[] = Array.from({ length: 50 }).map((_
     customerName: `Customer ${i + 1}`,
     customerPhone: `98765${Math.floor(10000 + Math.random() * 90000)}`,
     installationDate: format(date, 'yyyy-MM-dd'),
-    installerName: DUMMY_ENGINEERS[Math.floor(Math.random() * DUMMY_ENGINEERS.length)].name,
+    installerName: engineer.name,
+    installerId: engineer.id,
     package: pkg,
     connectionType: isRetailer ? 'Retailer' : 'Direct Customer',
     retailerShopName: retailer?.shopName,
@@ -63,7 +65,42 @@ export const DUMMY_CONNECTIONS: Connection[] = Array.from({ length: 50 }).map((_
     engineerCommission: engComm,
     retailerCommission: retComm,
     profit: profit,
+    cableUsed: 15,
     createdAt: format(date, 'yyyy-MM-dd HH:mm:ss'),
+  };
+});
+
+export const DUMMY_CABLE_STOCK: CableStock = {
+  id: 'stock-1',
+  type: 'CAT6',
+  totalStock: 5000,
+  allocated: 1500,
+  available: 3500,
+};
+
+export const DUMMY_ALLOCATIONS: EngineerAllocation[] = DUMMY_ENGINEERS.map((eng, i) => {
+  const assigned = 300;
+  const used = Math.floor(Math.random() * 150);
+  return {
+    id: `alloc-${i}`,
+    engineerId: eng.id,
+    engineerName: eng.name,
+    assignedCable: assigned,
+    remainingCable: assigned - used,
+    totalUsedCable: used,
+  };
+});
+
+export const DUMMY_CABLE_USAGE: CableUsage[] = DUMMY_CONNECTIONS.slice(0, 20).map((conn, i) => {
+  const eng = DUMMY_ENGINEERS.find(e => e.name === conn.installerName) || DUMMY_ENGINEERS[0];
+  return {
+    id: `usage-${i}`,
+    orderId: conn.orderId,
+    engineerId: eng.id,
+    engineerName: eng.name,
+    cableUsed: conn.cableUsed,
+    date: conn.installationDate,
+    remainingStock: 285 - (i * 15), // Mocking remaining stock
   };
 });
 

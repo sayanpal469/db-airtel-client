@@ -19,6 +19,7 @@ export interface Connection {
   customerPhone: string;
   installationDate: string;
   installerName: string;
+  installerId?: string;
   package: PackageType;
   connectionType: ConnectionType;
   retailerShopName?: string;
@@ -26,7 +27,35 @@ export interface Connection {
   engineerCommission: number;
   retailerCommission: number;
   profit: number;
+  cableUsed: number;
   createdAt: string;
+}
+
+export interface CableStock {
+  id: string;
+  type: string;
+  totalStock: number;
+  allocated: number;
+  available: number;
+}
+
+export interface EngineerAllocation {
+  id: string;
+  engineerId: string;
+  engineerName: string;
+  assignedCable: number;
+  remainingCable: number;
+  totalUsedCable: number;
+}
+
+export interface CableUsage {
+  id: string;
+  orderId: string;
+  engineerId: string;
+  engineerName: string;
+  cableUsed: number;
+  date: string;
+  remainingStock: number;
 }
 
 export interface Retailer {

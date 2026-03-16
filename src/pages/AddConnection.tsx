@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Save, User, Phone, Calendar, Package, UserCheck, Store, Calculator } from 'lucide-react';
+import { Save, User, Phone, Calendar, Package, UserCheck, Store, Calculator, Box } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { SearchableSelect } from '../components/SearchableSelect';
-import { DUMMY_ENGINEERS, DUMMY_RETAILERS, DEFAULT_COMMISSION_SETTINGS } from '../data/dummyData';
+import { DUMMY_ENGINEERS, DUMMY_RETAILERS, DEFAULT_COMMISSION_SETTINGS, DUMMY_ALLOCATIONS } from '../data/dummyData';
 
 const PACKAGES = [
   '40 Mbps + TV + OTT – ₹589 – 76 Days',
@@ -22,10 +22,20 @@ export const AddConnection = () => {
     installerName: '',
     package: PACKAGES[0],
     retailerId: '',
+    cableUsed: '15',
   });
 
   const engineerOptions = useMemo(() => 
-    DUMMY_ENGINEERS.map(eng => ({ value: eng.name, label: eng.name, sublabel: eng.area })),
+    DUMMY_ENGINEERS.map(eng => {
+      const allocation = DUMMY_ALLOCATIONS.find(a => a.engineerId === eng.id);
+      const stockInfo = allocation ? ` (Stock: ${allocation.remainingCable}m)` : ' (No Stock)';
+      return { 
+        value: eng.name, 
+        label: eng.name + stockInfo, 
+        sublabel: eng.area,
+        id: eng.id
+      };
+    }),
   []);
 
   const retailerOptions = useMemo(() => 
@@ -46,12 +56,25 @@ export const AddConnection = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check engineer stock
+    const engineer = DUMMY_ENGINEERS.find(e => e.name === formData.installerName);
+    const allocation = engineer ? DUMMY_ALLOCATIONS.find(a => a.engineerId === engineer.id) : null;
+    const cableNeeded = parseInt(formData.cableUsed);
+
+    if (allocation && allocation.remainingCable < cableNeeded) {
+      alert(`Insufficient cable stock for ${engineer?.name}. Remaining: ${allocation.remainingCable}m, Needed: ${cableNeeded}m`);
+      return;
+    }
+
     console.log('Form Submitted:', { 
       ...formData, 
       connectionType,
       ...calculations 
     });
-    alert('Connection added successfully! (Calculated Profit: ₹' + calculations.profit + ')');
+    
+    const remaining = allocation ? allocation.remainingCable - cableNeeded : 0;
+    alert(`Connection added successfully!\n\nCalculated Profit: ₹${calculations.profit}\nCable Deducted: ${cableNeeded}m\nEngineer Remaining Stock: ${remaining}m`);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -129,6 +152,21 @@ export const AddConnection = () => {
               onChange={(val) => setFormData({ ...formData, installerName: val })}
               placeholder="Search engineer..."
             />
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 flex items-center gap-2 uppercase tracking-wider">
+                <Box size={16} className="text-slate-400" /> Cable Used (meters)
+              </label>
+              <input 
+                type="number" 
+                name="cableUsed"
+                required
+                value={formData.cableUsed}
+                placeholder="Default 15m"
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-red-600 focus:border-transparent transition-all outline-none"
+                onChange={handleChange}
+              />
+            </div>
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-500 flex items-center gap-2 uppercase tracking-wider">

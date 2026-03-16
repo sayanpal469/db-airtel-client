@@ -17,6 +17,9 @@ import { EngineerPayouts } from './pages/EngineerPayouts';
 import { RetailerPayouts } from './pages/RetailerPayouts';
 import { ProfitReport } from './pages/ProfitReport';
 import { PaymentHistory } from './pages/PaymentHistory';
+import { CableStock } from './pages/inventory/CableStock';
+import { EngineerAllocation } from './pages/inventory/EngineerAllocation';
+import { CableUsageReport } from './pages/inventory/CableUsageReport';
 import { Login } from './pages/Login';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
@@ -52,6 +55,9 @@ export default function App() {
                     <Route path="/finance/retailer-payouts" element={<RetailerPayouts />} />
                     <Route path="/finance/payment-history" element={<PaymentHistory />} />
                     <Route path="/finance/profit-report" element={<ProfitReport />} />
+                    <Route path="/inventory/cable-stock" element={<CableStock />} />
+                    <Route path="/inventory/cable-allocation" element={<EngineerAllocation />} />
+                    <Route path="/inventory/usage-report" element={<CableUsageReport />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Layout>
