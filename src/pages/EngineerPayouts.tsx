@@ -1,19 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  UserCog, 
   Calendar, 
   Eye, 
   CheckCircle2, 
   Clock, 
-  Download,
   Search,
-  Check
+  Check,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
-import { DUMMY_CONNECTIONS } from '../data/dummyData';
-import { getEngineerPayouts } from '../utils/finance';
 import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
-import { Payout } from '../types';
+import { payoutApi, PayoutResponse } from '../api/payoutApi';
+import { cn } from '../utils/cn';
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -26,27 +25,66 @@ export const EngineerPayouts = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null);
-  const [confirmPayout, setConfirmPayout] = useState<Payout | null>(null);
-  const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [selectedPayout, setSelectedPayout] = useState<PayoutResponse | null>(null);
+  const [confirmPayout, setConfirmPayout] = useState<PayoutResponse | null>(null);
+  const [payouts, setPayouts] = useState<PayoutResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  // Initialize payouts
-  useMemo(() => {
-    setPayouts(getEngineerPayouts(DUMMY_CONNECTIONS, selectedMonth, selectedYear));
+  const fetchPayouts = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await payoutApi.getPayouts('Engineer', selectedMonth, selectedYear);
+      if (response.success) {
+        setPayouts(response.data);
+      } else {
+        setError(response.message || 'Failed to fetch payouts');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch payouts');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayouts();
   }, [selectedMonth, selectedYear]);
 
   const filteredPayouts = payouts.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleMarkAsPaid = () => {
-    if (confirmPayout) {
-      setPayouts(prev => prev.map(p => 
-        p.id === confirmPayout.id 
-          ? { ...p, status: 'Paid', paymentDate: new Date().toISOString() } 
-          : p
-      ));
-      setConfirmPayout(null);
+  const handleMarkAsPaid = async () => {
+    if (!confirmPayout) return;
+    setIsSubmitting(true);
+    try {
+      const response = await payoutApi.updateStatus({
+        recipientId: confirmPayout.recipientId,
+        recipientType: 'Engineer',
+        month: selectedMonth,
+        year: selectedYear,
+        amount: confirmPayout.commission,
+        connectionCount: confirmPayout.count,
+        status: 'Paid'
+      });
+
+      if (response.success) {
+        setPayouts(prev => prev.map(p => 
+          p.recipientId === confirmPayout.recipientId 
+            ? { ...p, status: 'Paid', paymentDate: new Date().toISOString() } 
+            : p
+        ));
+        setConfirmPayout(null);
+      } else {
+        setError(response.message || 'Failed to update payment status');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to update payment status');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -84,6 +122,13 @@ export const EngineerPayouts = () => {
         </div>
       </div>
 
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-red-600">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Search and Filters */}
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
         <div className="relative flex-1">
@@ -99,7 +144,12 @@ export const EngineerPayouts = () => {
       </div>
 
       {/* Payouts Table */}
-      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm relative min-h-[200px]">
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10 transition-all">
+            <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[900px]">
             <thead>
@@ -114,7 +164,7 @@ export const EngineerPayouts = () => {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredPayouts.map((payout) => (
-                <tr key={payout.id} className="hover:bg-slate-50/50 transition-colors group">
+                <tr key={payout.recipientId} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600 font-bold">
@@ -173,7 +223,7 @@ export const EngineerPayouts = () => {
                   </td>
                 </tr>
               ))}
-              {filteredPayouts.length === 0 && (
+              {!isLoading && filteredPayouts.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-8 py-12 text-center text-slate-400 italic">
                     No payouts found for the selected criteria.
@@ -219,13 +269,13 @@ export const EngineerPayouts = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {selectedPayout?.connections.map((conn) => (
-                  <tr key={conn.id} className="hover:bg-slate-50/50 transition-colors">
+                {selectedPayout?.connections.map((conn: any) => (
+                  <tr key={conn._id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4 text-xs font-bold text-red-600">{conn.orderId}</td>
                     <td className="px-6 py-4 text-xs font-medium text-slate-700">{conn.customerName}</td>
                     <td className="px-6 py-4 text-xs text-slate-500 max-w-[200px] truncate">{conn.package}</td>
                     <td className="px-6 py-4 text-xs text-slate-500">{format(new Date(conn.installationDate), 'dd MMM yyyy')}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-slate-800 text-right">₹{conn.engineerCommission}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-slate-800 text-right">₹{conn.commission}</td>
                   </tr>
                 ))}
               </tbody>
@@ -257,14 +307,17 @@ export const EngineerPayouts = () => {
           <div className="flex items-center gap-3 pt-4">
             <button 
               onClick={() => setConfirmPayout(null)}
+              disabled={isSubmitting}
               className="flex-1 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
             >
               Cancel
             </button>
             <button 
               onClick={handleMarkAsPaid}
-              className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2"
             >
+              {isSubmitting && <Loader2 size={18} className="animate-spin" />}
               Confirm Payment
             </button>
           </div>
@@ -273,7 +326,3 @@ export const EngineerPayouts = () => {
     </div>
   );
 };
-
-function cn(...classes: any[]) {
-  return classes.filter(Boolean).join(' ');
-}

@@ -13,21 +13,29 @@ export type PackageType =
 export type ConnectionType = 'Direct Customer' | 'Retailer';
 
 export interface Connection {
-  id: string;
+  _id: string;
   orderId: string;
   customerName: string;
   customerPhone: string;
   installationDate: string;
-  installerName: string;
-  installerId?: string;
-  package: PackageType;
+  engineer: {
+    _id: string;
+    name: string;
+    phone: string;
+  };
+  package: string;
   connectionType: ConnectionType;
-  retailerShopName?: string;
-  retailerPhone?: string;
+  retailer?: {
+    _id: string;
+    shopName: string;
+    name: string;
+    phone: string;
+  };
   engineerCommission: number;
   retailerCommission: number;
   profit: number;
   cableUsed: number;
+  status: 'Active' | 'Deactivated';
   createdAt: string;
 }
 

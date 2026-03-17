@@ -1,30 +1,65 @@
-import React, { useState } from 'react';
-import { Box, Plus, TrendingUp, Package, AlertTriangle, ArrowUpRight } from 'lucide-react';
-import { DUMMY_CABLE_STOCK } from '../../data/dummyData';
+import React, { useState, useEffect } from 'react';
+import { Box, Plus, TrendingUp, Package, ArrowUpRight, Loader2, AlertCircle } from 'lucide-react';
+import { cableApi, InventoryStatus } from '../../api/cableApi';
 import { cn } from '../../utils/cn';
 
 export const CableStock = () => {
-  const [stock, setStock] = useState(DUMMY_CABLE_STOCK);
+  const [status, setStatus] = useState<InventoryStatus | null>(null);
   const [addAmount, setAddAmount] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleAddStock = (e: React.FormEvent) => {
+  const fetchStatus = async () => {
+    setIsLoading(true);
+    try {
+      const response = await cableApi.getStatus();
+      if (response.success) {
+        setStatus(response.data);
+      } else {
+        setError(response.message || 'Failed to fetch stock status');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch stock status');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseInt(addAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    setStock(prev => ({
-      ...prev,
-      totalStock: prev.totalStock + amount,
-      available: prev.available + amount
-    }));
-    setAddAmount('');
-    alert(`${amount} meters of CAT6 cable added to stock.`);
+    setIsSubmitting(true);
+    setError('');
+    try {
+      const response = await cableApi.addStock(amount, remarks);
+      if (response.success) {
+        setAddAmount('');
+        setRemarks('');
+        fetchStatus();
+      } else {
+        setError(response.message || 'Failed to add stock');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to add stock');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
+  const allocatedTotal = status?.allocations.reduce((sum, a) => sum + a.remainingLength, 0) || 0;
+
   const stats = [
-    { label: 'Total Stock', value: `${stock.totalStock}m`, icon: Box, color: 'bg-blue-600' },
-    { label: 'Allocated to Engineers', value: `${stock.allocated}m`, icon: Package, color: 'bg-orange-600' },
-    { label: 'Available Stock', value: `${stock.available}m`, icon: TrendingUp, color: 'bg-emerald-600' },
+    { label: 'Warehouse Stock', value: `${status?.totalStock || 0}m`, icon: Box, color: 'bg-blue-600' },
+    { label: 'Allocated to Engineers', value: `${allocatedTotal}m`, icon: Package, color: 'bg-orange-600' },
+    { label: 'Total Inventory', value: `${(status?.totalStock || 0) + allocatedTotal}m`, icon: TrendingUp, color: 'bg-emerald-600' },
   ];
 
   return (
@@ -36,8 +71,20 @@ export const CableStock = () => {
         </div>
       </div>
 
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-red-600">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative min-h-[120px]">
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10">
+            <Loader2 className="animate-spin text-red-600" />
+          </div>
+        )}
         {stats.map((stat, i) => (
           <div key={i} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 hover:border-red-600/20 transition-all group">
             <div className="flex items-start justify-between">
@@ -89,11 +136,23 @@ export const CableStock = () => {
                   onChange={(e) => setAddAmount(e.target.value)}
                 />
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500 uppercase tracking-wider ml-1">Remarks</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. New batch from supplier"
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl text-slate-800 focus:ring-2 focus:ring-red-600 outline-none transition-all"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                />
+              </div>
               <button 
                 type="submit"
-                className="w-full py-4 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-[0.98]"
+                disabled={isSubmitting}
+                className="w-full py-4 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Add to Inventory
+                {isSubmitting && <Loader2 size={18} className="animate-spin" />}
+                {isSubmitting ? 'Updating...' : 'Add to Inventory'}
               </button>
             </form>
           </div>

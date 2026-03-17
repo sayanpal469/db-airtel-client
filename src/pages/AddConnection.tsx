@@ -1,85 +1,130 @@
-import React, { useState, useMemo } from 'react';
-import { Save, User, Phone, Calendar, Package, UserCheck, Store, Calculator, Box } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Save, User, Phone, Calendar, Package, UserCheck, Store, Calculator, Box, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../utils/cn';
 import { SearchableSelect } from '../components/SearchableSelect';
-import { DUMMY_ENGINEERS, DUMMY_RETAILERS, DEFAULT_COMMISSION_SETTINGS, DUMMY_ALLOCATIONS } from '../data/dummyData';
+import { engineerApi } from '../api/engineerApi';
+import { retailerApi } from '../api/retailerApi';
+import { connectionApi } from '../api/connectionApi';
+import { commissionApi } from '../api/commissionApi';
+import { CommissionSettings, Engineer, Retailer } from '../types';
 
 const PACKAGES = [
   '40 Mbps + TV + OTT – ₹589 – 76 Days',
   '30 Mbps + TV + OTT – ₹707 – 65 Days',
-  '100 Mbps + TV + OTT – ₹943 – 48 Days (Popular)',
+  '100 Mbps + TV + OTT – ₹1043 – 48 Days (Popular)',
   '100 Mbps + TV + OTT – ₹1061 – 43 Days',
   '499 Only WiFi'
 ];
 
 export const AddConnection = () => {
+  const navigate = useNavigate();
   const [connectionType, setConnectionType] = useState<'Direct Customer' | 'Retailer'>('Direct Customer');
   const [formData, setFormData] = useState({
     orderId: '',
     customerName: '',
     customerPhone: '',
-    installationDate: '',
-    installerName: '',
+    installationDate: new Date().toISOString().split('T')[0],
+    engineerId: '',
     package: PACKAGES[0],
     retailerId: '',
     cableUsed: '15',
   });
 
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [retailers, setRetailers] = useState<Retailer[]>([]);
+  const [settings, setSettings] = useState<CommissionSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [engRes, retRes, setRes] = await Promise.all([
+          engineerApi.getAll({ limit: 100 }),
+          retailerApi.getAll({ limit: 100 }),
+          commissionApi.getSettings()
+        ]);
+
+        if (engRes.success) setEngineers(engRes.data.engineers || []);
+        if (retRes.success) setRetailers(retRes.data.retailers || []);
+        if (setRes.success) setSettings(setRes.data);
+      } catch (err: any) {
+        setError('Failed to load required data. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
   const engineerOptions = useMemo(() => 
-    DUMMY_ENGINEERS.map(eng => {
-      const allocation = DUMMY_ALLOCATIONS.find(a => a.engineerId === eng.id);
-      const stockInfo = allocation ? ` (Stock: ${allocation.remainingCable}m)` : ' (No Stock)';
-      return { 
-        value: eng.name, 
-        label: eng.name + stockInfo, 
-        sublabel: eng.area,
-        id: eng.id
-      };
-    }),
-  []);
+    engineers.map(eng => ({ 
+      value: eng.id, 
+      label: eng.name, 
+      sublabel: eng.phone 
+    })),
+  [engineers]);
 
   const retailerOptions = useMemo(() => 
-    DUMMY_RETAILERS.map(ret => ({ value: ret.id, label: ret.shopName, sublabel: ret.name })),
-  []);
+    retailers.map(ret => ({ 
+      value: ret.id, 
+      label: ret.shopName, 
+      sublabel: ret.name 
+    })),
+  [retailers]);
 
-  // Auto Calculations
   const calculations = useMemo(() => {
+    if (!settings) return { engComm: 0, retComm: 0, profit: 0 };
     const isWiFiOnly = formData.package === '499 Only WiFi';
-    const engComm = DEFAULT_COMMISSION_SETTINGS.engineerInstallCharge;
+    const engComm = settings.engineerInstallCharge;
     const retComm = connectionType === 'Retailer' 
-      ? (isWiFiOnly ? DEFAULT_COMMISSION_SETTINGS.retailerCommissionWiFiOnly : DEFAULT_COMMISSION_SETTINGS.retailerCommissionNormal)
+      ? (isWiFiOnly ? settings.retailerCommissionWiFiOnly : settings.retailerCommissionNormal)
       : 0;
-    const profit = DEFAULT_COMMISSION_SETTINGS.companyCost - engComm - retComm;
+    const profit = settings.companyCost - engComm - retComm;
 
     return { engComm, retComm, profit };
-  }, [formData.package, connectionType]);
+  }, [formData.package, connectionType, settings]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Check engineer stock
-    const engineer = DUMMY_ENGINEERS.find(e => e.name === formData.installerName);
-    const allocation = engineer ? DUMMY_ALLOCATIONS.find(a => a.engineerId === engineer.id) : null;
-    const cableNeeded = parseInt(formData.cableUsed);
+    setError('');
+    setSuccess('');
+    setIsSubmitting(true);
 
-    if (allocation && allocation.remainingCable < cableNeeded) {
-      alert(`Insufficient cable stock for ${engineer?.name}. Remaining: ${allocation.remainingCable}m, Needed: ${cableNeeded}m`);
-      return;
+    try {
+      const response = await connectionApi.create({
+        ...formData,
+        connectionType
+      });
+
+      if (response.success) {
+        setSuccess('Connection added successfully!');
+        setTimeout(() => navigate('/connections'), 2000);
+      } else {
+        setError(response.message || 'Failed to add connection');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while adding connection');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    console.log('Form Submitted:', { 
-      ...formData, 
-      connectionType,
-      ...calculations 
-    });
-    
-    const remaining = allocation ? allocation.remainingCable - cableNeeded : 0;
-    alert(`Connection added successfully!\n\nCalculated Profit: ₹${calculations.profit}\nCable Deducted: ${cableNeeded}m\nEngineer Remaining Stock: ${remaining}m`);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -90,6 +135,20 @@ export const AddConnection = () => {
 
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
         <div className="p-8 space-y-8">
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-red-600 text-sm font-medium animate-shake">
+              <AlertCircle size={18} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {success && (
+            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-3 text-emerald-600 text-sm font-medium">
+              <CheckCircle2 size={18} />
+              <span>{success}</span>
+            </div>
+          )}
+
           {/* Basic Info Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
@@ -100,6 +159,7 @@ export const AddConnection = () => {
                 type="text" 
                 name="orderId"
                 required
+                value={formData.orderId}
                 placeholder="e.g. ORD-12345"
                 className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-red-600 focus:border-transparent transition-all outline-none"
                 onChange={handleChange}
@@ -113,6 +173,7 @@ export const AddConnection = () => {
                 type="text" 
                 name="customerName"
                 required
+                value={formData.customerName}
                 placeholder="Full Name"
                 className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-red-600 focus:border-transparent transition-all outline-none"
                 onChange={handleChange}
@@ -126,6 +187,7 @@ export const AddConnection = () => {
                 type="tel" 
                 name="customerPhone"
                 required
+                value={formData.customerPhone}
                 placeholder="10-digit mobile number"
                 className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-red-600 focus:border-transparent transition-all outline-none"
                 onChange={handleChange}
@@ -139,6 +201,7 @@ export const AddConnection = () => {
                 type="date" 
                 name="installationDate"
                 required
+                value={formData.installationDate}
                 className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-red-600 focus:border-transparent transition-all outline-none"
                 onChange={handleChange}
               />
@@ -148,8 +211,8 @@ export const AddConnection = () => {
               label="Select Engineer"
               icon={UserCheck}
               options={engineerOptions}
-              value={formData.installerName}
-              onChange={(val) => setFormData({ ...formData, installerName: val })}
+              value={formData.engineerId}
+              onChange={(val) => setFormData({ ...formData, engineerId: val })}
               placeholder="Search engineer..."
             />
 
@@ -174,6 +237,7 @@ export const AddConnection = () => {
               </label>
               <select 
                 name="package"
+                value={formData.package}
                 className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-red-600 focus:border-transparent transition-all outline-none"
                 onChange={handleChange}
               >
@@ -248,9 +312,11 @@ export const AddConnection = () => {
         <div className="p-8 bg-white border-t border-slate-100 flex justify-end">
           <button 
             type="submit"
-            className="flex items-center gap-2 px-8 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-600/10 transition-all active:scale-95"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 px-8 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-600/10 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            <Save size={20} /> Submit Connection
+            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save size={20} />}
+            <span>Submit Connection</span>
           </button>
         </div>
       </form>

@@ -1,32 +1,52 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Lock, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { Lock, ArrowLeft, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { authApi } from '../api/authApi';
 
 export const ResetPassword = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState('');
+  
   const navigate = useNavigate();
+  const location = useLocation();
+  const token = location.state?.token;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!token) {
+      navigate('/login');
+    }
+  }, [token, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long');
-      return;
-    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
-    setIsSuccess(true);
-    setTimeout(() => {
-      navigate('/login');
-    }, 2000);
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await authApi.resetPassword({ token, newPassword: password });
+      if (response.success) {
+        setIsSuccess(true);
+      } else {
+        setError(response.message || 'Failed to reset password');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to reset password');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -41,17 +61,27 @@ export const ResetPassword = () => {
         </div>
 
         <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Reset Password</h2>
-          <p className="text-slate-500 text-sm mb-6">Set a new secure password for your account.</p>
+          <Link to="/login" className="inline-flex items-center gap-2 text-slate-400 hover:text-red-600 text-sm font-bold mb-6 transition-colors">
+            <ArrowLeft size={16} />
+            <span>Back to Login</span>
+          </Link>
 
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Reset Password</h2>
+          
           {isSuccess ? (
             <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-2xl text-center space-y-4">
               <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
                 <CheckCircle2 size={24} />
               </div>
               <p className="text-emerald-800 font-medium">
-                Password reset successful! Redirecting to login...
+                Your password has been reset successfully.
               </p>
+              <Link
+                to="/login"
+                className="block w-full py-4 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 shadow-lg shadow-red-100 transition-all text-center"
+              >
+                Go to Login
+              </Link>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -61,7 +91,7 @@ export const ResetPassword = () => {
                   <span>{error}</span>
                 </div>
               )}
-
+              
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-500 uppercase tracking-wider ml-1">New Password</label>
                 <div className="relative">
@@ -78,7 +108,7 @@ export const ResetPassword = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-500 uppercase tracking-wider ml-1">Confirm Password</label>
+                <label className="text-sm font-bold text-slate-500 uppercase tracking-wider ml-1">Confirm New Password</label>
                 <div className="relative">
                   <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
@@ -94,9 +124,17 @@ export const ResetPassword = () => {
 
               <button
                 type="submit"
-                className="w-full py-4 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-[0.98]"
+                disabled={isSubmitting}
+                className="w-full py-4 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
               >
-                Reset Password
+                {isSubmitting ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin" />
+                    <span>Resetting...</span>
+                  </>
+                ) : (
+                  <span>Reset Password</span>
+                )}
               </button>
             </form>
           )}

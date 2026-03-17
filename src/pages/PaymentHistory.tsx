@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   History, 
   Search, 
@@ -10,13 +10,13 @@ import {
   CheckCircle2,
   Clock,
   ArrowUpRight,
-  ArrowDownRight,
-  IndianRupee
+  IndianRupee,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
-import { DUMMY_CONNECTIONS } from '../data/dummyData';
-import { getEngineerPayouts, getRetailerPayouts } from '../utils/finance';
 import { format } from 'date-fns';
-import { Payout } from '../types';
+import { payoutApi } from '../api/payoutApi';
+import { cn } from '../utils/cn';
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -26,45 +26,57 @@ const MONTHS = [
 const YEARS = [2024, 2025, 2026];
 
 export const PaymentHistory = () => {
-  const [selectedMonth, setSelectedMonth] = useState<number | 'all'>(new Date().getMonth());
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number | 'all'>('all');
+  const [selectedYear, setSelectedYear] = useState<number | 'all'>(new Date().getFullYear());
   const [selectedType, setSelectedType] = useState<'all' | 'Engineer' | 'Retailer'>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'Paid' | 'Unpaid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const allPayouts = useMemo(() => {
-    const monthsToFetch = selectedMonth === 'all' ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] : [selectedMonth];
-    
-    let combined: Payout[] = [];
-    
-    monthsToFetch.forEach(m => {
-      const eng = getEngineerPayouts(DUMMY_CONNECTIONS, m, selectedYear);
-      const ret = getRetailerPayouts(DUMMY_CONNECTIONS, m, selectedYear);
-      combined = [...combined, ...eng, ...ret];
-    });
+  const fetchHistory = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await payoutApi.getHistory({
+        type: selectedType,
+        status: selectedStatus,
+        month: selectedMonth,
+        year: selectedYear
+      });
+      if (response.success) {
+        setPayouts(response.data);
+      } else {
+        setError(response.message || 'Failed to fetch history');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch history');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    return combined.sort((a, b) => {
-      if (!a.paymentDate) return 1;
-      if (!b.paymentDate) return -1;
-      return new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime();
-    });
-  }, [selectedMonth, selectedYear]);
+  useEffect(() => {
+    fetchHistory();
+  }, [selectedMonth, selectedYear, selectedStatus, selectedType]);
 
-  const filteredPayouts = allPayouts.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = selectedType === 'all' || p.type === selectedType;
-    const matchesStatus = selectedStatus === 'all' || p.status === selectedStatus;
-    return matchesSearch && matchesType && matchesStatus;
-  });
+  const filteredPayouts = payouts.filter(p => 
+    p.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const stats = useMemo(() => {
     return {
-      totalPaid: filteredPayouts.filter(p => p.status === 'Paid').reduce((sum, p) => sum + p.commission, 0),
-      totalPending: filteredPayouts.filter(p => p.status === 'Unpaid').reduce((sum, p) => sum + p.commission, 0),
-      engineerTotal: filteredPayouts.filter(p => p.type === 'Engineer' && p.status === 'Paid').reduce((sum, p) => sum + p.commission, 0),
-      retailerTotal: filteredPayouts.filter(p => p.type === 'Retailer' && p.status === 'Paid').reduce((sum, p) => sum + p.commission, 0),
+      totalPaid: payouts.filter(p => p.status === 'Paid').reduce((sum, p) => sum + p.commission, 0),
+      totalPending: payouts.filter(p => p.status === 'Unpaid').reduce((sum, p) => sum + p.commission, 0),
+      engineerTotal: payouts.filter(p => p.type === 'Engineer' && p.status === 'Paid').reduce((sum, p) => sum + p.commission, 0),
+      retailerTotal: payouts.filter(p => p.type === 'Retailer' && p.status === 'Paid').reduce((sum, p) => sum + p.commission, 0),
     };
-  }, [filteredPayouts]);
+  }, [payouts]);
+
+  const handleExport = () => {
+    alert("Exporting history...");
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -74,14 +86,29 @@ export const PaymentHistory = () => {
           <p className="text-slate-500 mt-1">Consolidated view of all financial payouts and their statuses.</p>
         </div>
 
-        <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm">
+        <button 
+          onClick={handleExport}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
+        >
           <Download size={18} />
           <span>Export History</span>
         </button>
       </div>
 
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-red-600">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative min-h-[120px]">
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10">
+            <Loader2 className="animate-spin text-red-600" />
+          </div>
+        )}
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center">
@@ -190,7 +217,12 @@ export const PaymentHistory = () => {
       </div>
 
       {/* History Table */}
-      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm relative min-h-[200px]">
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10 transition-all">
+            <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
@@ -214,7 +246,7 @@ export const PaymentHistory = () => {
                       )}>
                         {payout.type === 'Engineer' ? <User size={18} /> : <Store size={18} />}
                       </div>
-                      <span className="font-bold text-slate-800">{payout.name}</span>
+                      <span className="font-bold text-slate-800">{payout.name || 'Unknown'}</span>
                     </div>
                   </td>
                   <td className="px-8 py-5">
@@ -254,7 +286,7 @@ export const PaymentHistory = () => {
                   </td>
                 </tr>
               ))}
-              {filteredPayouts.length === 0 && (
+              {!isLoading && filteredPayouts.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-8 py-12 text-center text-slate-400 italic">
                     No payment history found for the selected criteria.
@@ -268,7 +300,3 @@ export const PaymentHistory = () => {
     </div>
   );
 };
-
-function cn(...classes: any[]) {
-  return classes.filter(Boolean).join(' ');
-}

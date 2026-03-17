@@ -1,21 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
   Wallet, 
   Users, 
   TrendingUp, 
   DollarSign, 
-  ArrowUpRight, 
-  ArrowDownRight,
   Calendar,
-  ChevronDown,
-  Download,
   FileText,
-  Table as TableIcon
+  Table as TableIcon,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
-import { DUMMY_CONNECTIONS } from '../data/dummyData';
-import { calculateMonthlySummary } from '../utils/finance';
-import { format } from 'date-fns';
+import { payoutApi, MonthlySummary } from '../api/payoutApi';
+import { cn } from '../utils/cn';
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -27,67 +24,87 @@ const YEARS = [2024, 2025, 2026];
 export const MonthlySettlements = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [summary, setSummary] = useState<MonthlySummary | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const summary = useMemo(() => 
-    calculateMonthlySummary(DUMMY_CONNECTIONS, selectedMonth, selectedYear),
-    [selectedMonth, selectedYear]
-  );
+  const fetchSummary = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await payoutApi.getMonthlySummary(selectedMonth, selectedYear);
+      if (response.success) {
+        setSummary(response.data);
+      } else {
+        setError(response.message || 'Failed to fetch summary');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch summary');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const stats = [
-    { 
-      label: 'Total Connections', 
-      value: summary.totalConnections, 
-      icon: Users, 
-      color: 'text-blue-600', 
-      bg: 'bg-blue-50',
-      description: 'New installations this month'
-    },
-    { 
-      label: 'Total Revenue', 
-      value: `₹${summary.totalRevenue.toLocaleString()}`, 
-      icon: TrendingUp, 
-      color: 'text-emerald-600', 
-      bg: 'bg-emerald-50',
-      description: 'Gross customer payments'
-    },
-    { 
-      label: 'Company Cost', 
-      value: `₹${summary.totalCompanyCost.toLocaleString()}`, 
-      icon: Wallet, 
-      color: 'text-amber-600', 
-      bg: 'bg-amber-50',
-      description: 'Fixed cost to company'
-    },
-    { 
-      label: 'Engineer Comm.', 
-      value: `₹${summary.totalEngineerCommission.toLocaleString()}`, 
-      icon: DollarSign, 
-      color: 'text-red-600', 
-      bg: 'bg-red-50',
-      description: 'Total installation charges'
-    },
-    { 
-      label: 'Retailer Comm.', 
-      value: `₹${summary.totalRetailerCommission.toLocaleString()}`, 
-      icon: DollarSign, 
-      color: 'text-purple-600', 
-      bg: 'bg-purple-50',
-      description: 'Total partner commissions'
-    },
-    { 
-      label: 'Deshbondhu Profit', 
-      value: `₹${summary.totalProfit.toLocaleString()}`, 
-      icon: TrendingUp, 
-      color: 'text-red-600', 
-      bg: 'bg-red-50',
-      description: 'Net profit after payouts',
-      highlight: true
-    },
-  ];
+  useEffect(() => {
+    fetchSummary();
+  }, [selectedMonth, selectedYear]);
+
+  const stats = useMemo(() => {
+    if (!summary) return [];
+    return [
+      { 
+        label: 'Total Connections', 
+        value: summary.totalConnections, 
+        icon: Users, 
+        color: 'text-blue-600', 
+        bg: 'bg-blue-50',
+        description: 'New installations this month'
+      },
+      { 
+        label: 'Total Revenue', 
+        value: `₹${summary.totalRevenue.toLocaleString()}`, 
+        icon: TrendingUp, 
+        color: 'text-emerald-600', 
+        bg: 'bg-emerald-50',
+        description: 'Gross customer payments'
+      },
+      { 
+        label: 'Company Cost', 
+        value: `₹${summary.totalCompanyCost.toLocaleString()}`, 
+        icon: Wallet, 
+        color: 'text-amber-600', 
+        bg: 'bg-amber-50',
+        description: 'Fixed cost to company'
+      },
+      { 
+        label: 'Engineer Comm.', 
+        value: `₹${summary.totalEngineerCommission.toLocaleString()}`, 
+        icon: DollarSign, 
+        color: 'text-red-600', 
+        bg: 'bg-red-50',
+        description: 'Total installation charges'
+      },
+      { 
+        label: 'Retailer Comm.', 
+        value: `₹${summary.totalRetailerCommission.toLocaleString()}`, 
+        icon: DollarSign, 
+        color: 'text-purple-600', 
+        bg: 'bg-purple-50',
+        description: 'Total partner commissions'
+      },
+      { 
+        label: 'Deshbondhu Profit', 
+        value: `₹${summary.totalProfit.toLocaleString()}`, 
+        icon: TrendingUp, 
+        color: 'text-red-600', 
+        bg: 'bg-red-50',
+        description: 'Net profit after payouts',
+        highlight: true
+      },
+    ];
+  }, [summary]);
 
   const handleExport = (type: 'csv' | 'excel') => {
-    console.log(`Exporting ${type} for ${MONTHS[selectedMonth]} ${selectedYear}`);
-    // In a real app, this would trigger a download
     alert(`Exporting ${type.toUpperCase()} for ${MONTHS[selectedMonth]} ${selectedYear}`);
   };
 
@@ -140,8 +157,20 @@ export const MonthlySettlements = () => {
         </div>
       </div>
 
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-red-600">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Summary Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 relative min-h-[200px]">
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10 transition-all">
+            <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+          </div>
+        )}
         {stats.map((stat, index) => (
           <motion.div
             key={stat.label}
@@ -241,7 +270,3 @@ export const MonthlySettlements = () => {
     </div>
   );
 };
-
-function cn(...classes: any[]) {
-  return classes.filter(Boolean).join(' ');
-}

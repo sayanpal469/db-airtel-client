@@ -11,12 +11,6 @@ export const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const fillDemoCredentials = () => {
-    setEmail('admin@deshbondhu.com');
-    setPassword('admin123');
-    setError('');
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -56,13 +50,6 @@ export const Login = () => {
         <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-slate-800">Login</h2>
-            <button
-              onClick={fillDemoCredentials}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition-all border border-slate-200 hover:border-red-100"
-            >
-              <Key size={14} />
-              Demo Credentials
-            </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">

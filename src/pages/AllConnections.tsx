@@ -1,11 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   createColumnHelper, 
   flexRender, 
   getCoreRowModel, 
   useReactTable,
-  getPaginationRowModel,
-  getFilteredRowModel
 } from '@tanstack/react-table';
 import { 
   Download, 
@@ -18,58 +16,85 @@ import {
   Calendar,
   Package,
   User,
-  Hash,
-  UserCheck
+  UserCheck,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { format, isWithinInterval, parseISO, startOfWeek, endOfWeek } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { SearchableSelect } from '../components/SearchableSelect';
-import { DUMMY_CONNECTIONS, DUMMY_ENGINEERS } from '../data/dummyData';
-import { Connection } from '../types';
+import { connectionApi, ConnectionFilterParams } from '../api/connectionApi';
+import { engineerApi } from '../api/engineerApi';
+import { Connection, Engineer } from '../types';
 import { cn } from '../utils/cn';
 
 const columnHelper = createColumnHelper<Connection>();
 
 export const AllConnections = () => {
-  const [data] = useState(DUMMY_CONNECTIONS);
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [filters, setFilters] = useState({
-    type: '',
-    package: '',
-    installer: '',
-    dateRange: { start: '', end: '' }
+  const [data, setData] = useState<Connection[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
+  
+  // Pagination & Filter State
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
   });
 
-  const filteredData = useMemo(() => {
-    return data.filter(item => {
-      const date = parseISO(item.installationDate);
-      
-      // Type filter
-      if (filters.type && item.connectionType !== filters.type) return false;
-      
-      // Package filter
-      if (filters.package && item.package !== filters.package) return false;
-      
-      // Installer filter
-      if (filters.installer && item.installerName !== filters.installer) return false;
-      
-      // Date range filter
-      if (filters.dateRange.start && filters.dateRange.end) {
-        if (!isWithinInterval(date, { 
-          start: parseISO(filters.dateRange.start), 
-          end: parseISO(filters.dateRange.end) 
-        })) return false;
-      }
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [filters, setFilters] = useState<ConnectionFilterParams>({
+    connectionType: '',
+    package: '',
+    engineerId: '',
+    startDate: '',
+    endDate: ''
+  });
 
-      return true;
-    });
-  }, [data, filters]);
+  const fetchConnections = async () => {
+    setIsLoading(true);
+    try {
+      const response = await connectionApi.getAll({
+        ...filters,
+        search: globalFilter,
+        page: pagination.currentPage,
+        limit: pagination.itemsPerPage
+      });
+
+      if (response.success) {
+        setData(response.data.connections);
+        setPagination(response.data.pagination);
+      } else {
+        setError(response.message || 'Failed to fetch connections');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while fetching connections');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConnections();
+  }, [pagination.currentPage, filters, globalFilter]);
+
+  useEffect(() => {
+    const fetchEngineers = async () => {
+      try {
+        const res = await engineerApi.getAll({ limit: 100 });
+        if (res.success) setEngineers(res.data.engineers || []);
+      } catch (err) {}
+    };
+    fetchEngineers();
+  }, []);
 
   const columns = [
     columnHelper.display({
       id: 'serial',
       header: 'S.No',
-      cell: info => <span className="text-slate-500 font-mono">{info.row.index + 1}</span>
+      cell: info => <span className="text-slate-500 font-mono">{(pagination.currentPage - 1) * pagination.itemsPerPage + info.row.index + 1}</span>
     }),
     columnHelper.accessor('orderId', { header: 'Order ID', cell: info => <span className="font-bold text-slate-800">{info.getValue()}</span> }),
     columnHelper.accessor('customerName', { header: 'Customer', cell: info => (
@@ -84,7 +109,7 @@ export const AllConnections = () => {
       </div>
     )}),
     columnHelper.accessor('installationDate', { header: 'Date', cell: info => format(parseISO(info.getValue()), 'dd MMM yyyy') }),
-    columnHelper.accessor('installerName', { header: 'Engineer', cell: info => <span className="text-slate-600">{info.getValue()}</span> }),
+    columnHelper.accessor('engineer.name', { header: 'Engineer', cell: info => <span className="text-slate-600">{info.getValue()}</span> }),
     columnHelper.accessor('engineerCommission', { header: 'Eng. Comm', cell: info => `₹${info.getValue()}` }),
     columnHelper.accessor('retailerCommission', { header: 'Ret. Comm', cell: info => `₹${info.getValue()}` }),
     columnHelper.accessor('profit', { header: 'Profit', cell: info => (
@@ -98,7 +123,7 @@ export const AllConnections = () => {
         {info.getValue()}
       </span>
     )}),
-    columnHelper.accessor('retailerShopName', { header: 'Retailer', cell: info => info.getValue() || '-' }),
+    columnHelper.accessor('retailer.shopName', { header: 'Retailer', cell: info => info.getValue() || '-' }),
     columnHelper.display({
       id: 'actions',
       header: 'Actions',
@@ -112,21 +137,34 @@ export const AllConnections = () => {
   ];
 
   const table = useReactTable({
-    data: filteredData,
+    data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    state: { globalFilter },
-    onGlobalFilterChange: setGlobalFilter,
-    initialState: { pagination: { pageSize: 10 } }
   });
 
   const exportToExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredData);
+    const exportData = data.map(item => ({
+      'Order ID': item.orderId,
+      'Customer': item.customerName,
+      'Phone': item.customerPhone,
+      'Package': item.package,
+      'Date': format(parseISO(item.installationDate), 'dd MMM yyyy'),
+      'Engineer': item.engineer.name,
+      'Eng. Commission': item.engineerCommission,
+      'Ret. Commission': item.retailerCommission,
+      'Profit': item.profit,
+      'Type': item.connectionType,
+      'Retailer': item.retailer?.shopName || 'Direct'
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Connections");
     XLSX.writeFile(wb, "AirFiber_Connections.xlsx");
+  };
+
+  const handleFilterChange = (name: string, value: any) => {
+    setFilters(prev => ({ ...prev, [name]: value }));
+    setPagination(prev => ({ ...prev, currentPage: 1 }));
   };
 
   return (
@@ -153,7 +191,8 @@ export const AllConnections = () => {
           <input 
             type="date"
             className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-red-600 outline-none p-2"
-            onChange={(e) => setFilters({ ...filters, dateRange: { ...filters.dateRange, start: e.target.value } })}
+            value={filters.startDate}
+            onChange={(e) => handleFilterChange('startDate', e.target.value)}
           />
         </div>
         <div className="space-y-1">
@@ -163,7 +202,8 @@ export const AllConnections = () => {
           <input 
             type="date"
             className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-red-600 outline-none p-2"
-            onChange={(e) => setFilters({ ...filters, dateRange: { ...filters.dateRange, end: e.target.value } })}
+            value={filters.endDate}
+            onChange={(e) => handleFilterChange('endDate', e.target.value)}
           />
         </div>
         <div className="space-y-1">
@@ -172,7 +212,8 @@ export const AllConnections = () => {
           </label>
           <select 
             className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-red-600 outline-none p-2"
-            onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+            value={filters.connectionType}
+            onChange={(e) => handleFilterChange('connectionType', e.target.value)}
           >
             <option value="">All Types</option>
             <option value="Retailer">Retailer</option>
@@ -184,9 +225,9 @@ export const AllConnections = () => {
             <User size={12} /> Engineer
           </label>
           <SearchableSelect 
-            options={DUMMY_ENGINEERS.map(eng => ({ value: eng.name, label: eng.name }))}
-            value={filters.installer}
-            onChange={(val) => setFilters({ ...filters, installer: val })}
+            options={engineers.map(eng => ({ value: eng.id, label: eng.name }))}
+            value={filters.engineerId || ''}
+            onChange={(val) => handleFilterChange('engineerId', val)}
             placeholder="All Engineers"
             icon={UserCheck}
           />
@@ -206,7 +247,13 @@ export const AllConnections = () => {
       </div>
 
       {/* Table Section */}
-      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm relative">
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10 transition-all">
+            <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
@@ -221,57 +268,67 @@ export const AllConnections = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {table.getRowModel().rows.map(row => (
-                <tr key={row.id} className="hover:bg-slate-50 transition-colors group">
-                  {row.getVisibleCells().map(cell => (
-                    <td key={cell.id} className="px-6 py-4 text-sm text-slate-600">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+              {data.length > 0 ? (
+                table.getRowModel().rows.map(row => (
+                  <tr key={row.id} className="hover:bg-slate-50 transition-colors group">
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id} className="px-6 py-4 text-sm text-slate-600">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={columns.length} className="px-6 py-10 text-center text-slate-500">
+                    No connections found matching your criteria.
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Pagination */}
-        <div className="px-4 md:px-6 py-4 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-sm text-slate-500 text-center sm:text-left">
-            Showing <span className="font-semibold text-slate-700">{table.getRowModel().rows.length}</span> of <span className="font-semibold text-slate-700">{filteredData.length}</span> results
-          </div>
-          <div className="flex items-center gap-2 flex-wrap justify-center">
-            <button 
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-              className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <div className="flex items-center gap-1 flex-wrap justify-center">
-              {Array.from({ length: table.getPageCount() }).map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => table.setPageIndex(i)}
-                  className={cn(
-                    "w-8 h-8 rounded-lg text-sm font-medium transition-all",
-                    table.getState().pagination.pageIndex === i 
-                      ? "bg-red-600 text-white shadow-md shadow-red-100" 
-                      : "hover:bg-slate-50 text-slate-500 border border-transparent hover:border-slate-200"
-                  )}
-                >
-                  {i + 1}
-                </button>
-              )).slice(0, 5)}
+        {pagination.totalPages > 1 && (
+          <div className="px-4 md:px-6 py-4 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="text-sm text-slate-500 text-center sm:text-left">
+              Showing <span className="font-semibold text-slate-700">{data.length}</span> of <span className="font-semibold text-slate-700">{pagination.totalItems}</span> results
             </div>
-            <button 
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-              className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              <ChevronRight size={18} />
-            </button>
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              <button 
+                onClick={() => setPagination(p => ({ ...p, currentPage: p.currentPage - 1 }))}
+                disabled={pagination.currentPage === 1}
+                className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div className="flex items-center gap-1 flex-wrap justify-center">
+                {Array.from({ length: pagination.totalPages }).map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setPagination(p => ({ ...p, currentPage: i + 1 }))}
+                    className={cn(
+                      "w-8 h-8 rounded-lg text-sm font-medium transition-all",
+                      pagination.currentPage === i + 1 
+                        ? "bg-red-600 text-white shadow-md shadow-red-100" 
+                        : "hover:bg-slate-50 text-slate-500 border border-transparent hover:border-slate-200"
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                )).slice(Math.max(0, pagination.currentPage - 3), Math.min(pagination.totalPages, pagination.currentPage + 2))}
+              </div>
+              <button 
+                onClick={() => setPagination(p => ({ ...p, currentPage: p.currentPage + 1 }))}
+                disabled={pagination.currentPage === pagination.totalPages}
+                className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
